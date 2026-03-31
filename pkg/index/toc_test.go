@@ -132,6 +132,28 @@ func TestCalculatePageOffset(t *testing.T) {
 	}
 }
 
+func TestCalculatePageOffsetTieBreaking(t *testing.T) {
+	// When two offsets appear equally often, the result must be deterministic.
+	// We pick the smaller offset on tie.
+	entries := []tree.TOCEntry{
+		{PageNumber: 1, PhysicalIndex: 11}, // offset = 10
+		{PageNumber: 2, PhysicalIndex: 7},  // offset = 5
+	}
+
+	// Run multiple times to catch non-determinism
+	first := CalculatePageOffset(entries)
+	for i := 0; i < 50; i++ {
+		got := CalculatePageOffset(entries)
+		if got != first {
+			t.Fatalf("CalculatePageOffset is non-deterministic: got %d and %d", first, got)
+		}
+	}
+	// Smaller offset should win on tie
+	if first != 5 {
+		t.Errorf("CalculatePageOffset tie = %d, want 5 (smaller offset)", first)
+	}
+}
+
 func TestApplyPageOffset(t *testing.T) {
 	entries := []tree.TOCEntry{
 		{Structure: "1", Title: "Intro", PageNumber: 1, PhysicalIndex: 0},

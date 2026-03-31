@@ -303,3 +303,42 @@ func TestGenerateSummaryTruncatesOnRunes(t *testing.T) {
 		t.Errorf("summary = %q", node.Summary)
 	}
 }
+
+func TestProcessLargeNodesEstimatesFromPageTexts(t *testing.T) {
+	// Bug: ProcessLargeNodes was called before AttachText, so node.Text was always
+	// empty and EstimateTokens always returned 0, making the function a no-op.
+	// After fix, it should estimate tokens from pageTexts directly.
+	longPage := strings.Repeat("word ", 10000) // ~10000 tokens
+	pageTexts := make([]string, 20)
+	for i := range pageTexts {
+		pageTexts[i] = longPage
+	}
+
+	// Create a leaf node spanning all 20 pages with no text attached
+	node := &tree.Node{
+		Title:      "Large Chapter",
+		StartIndex: 1,
+		EndIndex:   20,
+		// Text intentionally empty — simulating pre-AttachText state
+	}
+
+	// Mock that returns a generated TOC structure
+	mock := &mockClient{responses: []string{
+		`[{"structure": "1", "title": "Part A", "physical_index": 1}, {"structure": "2", "title": "Part B", "physical_index": 10}]`,
+	}}
+
+	// maxPages=5 means this 20-page node exceeds page limit
+	// maxTokens=5000 means each page's ~10000 tokens easily exceeds token limit
+	// If the bug still existed, tokenCount would be 0 and the function would return
+	// without subdividing.
+	err := ProcessLargeNodes(context.Background(), []*tree.Node{node}, pageTexts,
+		5, 5000, mock, "test")
+	if err != nil {
+		t.Fatalf("ProcessLargeNodes: %v", err)
+	}
+
+	// After fix: node should have been subdivided (children added)
+	if len(node.Children) == 0 {
+		t.Error("ProcessLargeNodes did not subdivide large node — token estimation from pageTexts not working")
+	}
+}

@@ -174,7 +174,23 @@ func processLargeNode(ctx context.Context, node *tree.Node, pageTexts []string,
 		return nil
 	}
 
-	tokenCount := llm.EstimateTokens(node.Text)
+	// Estimate tokens from pageTexts directly since node.Text may not be attached yet
+	var tokenCount int
+	if node.Text != "" {
+		tokenCount = llm.EstimateTokens(node.Text)
+	} else if node.StartIndex > 0 && node.EndIndex > 0 {
+		start := node.StartIndex
+		end := node.EndIndex
+		if start < 1 {
+			start = 1
+		}
+		if end > len(pageTexts) {
+			end = len(pageTexts)
+		}
+		for p := start; p <= end; p++ {
+			tokenCount += llm.EstimateTokens(pageTexts[p-1])
+		}
+	}
 	if tokenCount <= maxTokens {
 		return nil
 	}

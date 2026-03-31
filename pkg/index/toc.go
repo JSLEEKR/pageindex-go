@@ -200,7 +200,7 @@ func CalculatePageOffset(entries []tree.TOCEntry) int {
 	bestOffset := 0
 	bestCount := 0
 	for offset, count := range counts {
-		if count > bestCount {
+		if count > bestCount || (count == bestCount && offset < bestOffset) {
 			bestCount = count
 			bestOffset = offset
 		}
