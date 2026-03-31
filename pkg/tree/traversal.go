@@ -205,6 +205,7 @@ func compareStructureCodes(a, b string) int {
 
 // calcEndIndex calculates the end page index for a TOC entry.
 // It looks at the next sibling or parent's next sibling to determine where this node ends.
+// The result is guaranteed to be >= the entry's own PhysicalIndex (or 0 if unknown).
 func calcEndIndex(entries []TOCEntry, idx int) int {
 	currentLevel := structureLevel(entries[idx].Structure)
 
@@ -213,7 +214,12 @@ func calcEndIndex(entries []TOCEntry, idx int) int {
 		if nextLevel <= currentLevel {
 			// Next entry at same or higher level = our end
 			if entries[i].PhysicalIndex > 0 {
-				return entries[i].PhysicalIndex - 1
+				end := entries[i].PhysicalIndex - 1
+				// Ensure end is not below our own start (handles non-monotonic indices)
+				if entries[idx].PhysicalIndex > 0 && end < entries[idx].PhysicalIndex {
+					end = entries[idx].PhysicalIndex
+				}
+				return end
 			}
 		}
 	}
@@ -224,6 +230,7 @@ func calcEndIndex(entries []TOCEntry, idx int) int {
 
 // SetEndIndices fills in missing end indices. Leaf nodes that span to the next
 // sibling get their end index set. The last node gets maxPage as end.
+// Also enforces EndIndex >= StartIndex for all nodes.
 func SetEndIndices(nodes []*Node, maxPage int) {
 	flat := Flatten(nodes)
 	for i, n := range flat {
@@ -236,6 +243,11 @@ func SetEndIndices(nodes []*Node, maxPage int) {
 			} else {
 				n.EndIndex = maxPage
 			}
+		}
+		// Enforce EndIndex >= StartIndex even for pre-set values
+		// (handles non-monotonic physical indices from LLM mapping)
+		if n.StartIndex > 0 && n.EndIndex > 0 && n.EndIndex < n.StartIndex {
+			n.EndIndex = n.StartIndex
 		}
 	}
 	// Propagate end indices up: parent end = max of children ends

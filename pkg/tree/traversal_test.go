@@ -294,3 +294,53 @@ func TestFlattenEmpty(t *testing.T) {
 		t.Errorf("Flatten(nil) returned %d items", len(result))
 	}
 }
+
+func TestCalcEndIndexNonMonotonicIndices(t *testing.T) {
+	// When LLM maps TOC entries with non-monotonic physical indices,
+	// calcEndIndex must not produce EndIndex < StartIndex.
+	entries := []TOCEntry{
+		{Structure: "1", Title: "A", PhysicalIndex: 10},
+		{Structure: "2", Title: "B", PhysicalIndex: 5}, // lower than A
+	}
+
+	end := calcEndIndex(entries, 0)
+	if end < entries[0].PhysicalIndex {
+		t.Errorf("calcEndIndex returned %d, which is less than StartIndex %d", end, entries[0].PhysicalIndex)
+	}
+}
+
+func TestListToTreeNonMonotonicPhysicalIndex(t *testing.T) {
+	// LLM-generated TOC entries may have non-monotonic physical indices.
+	// No node should end up with EndIndex < StartIndex.
+	entries := []TOCEntry{
+		{Structure: "1", Title: "Intro", PhysicalIndex: 1},
+		{Structure: "2", Title: "Methods", PhysicalIndex: 10},
+		{Structure: "3", Title: "Results", PhysicalIndex: 7}, // out of order
+		{Structure: "4", Title: "Conclusion", PhysicalIndex: 15},
+	}
+
+	nodes := ListToTree(entries)
+	SetEndIndices(nodes, 20)
+
+	for _, n := range Flatten(nodes) {
+		if n.StartIndex > 0 && n.EndIndex > 0 && n.EndIndex < n.StartIndex {
+			t.Errorf("Node %q has EndIndex (%d) < StartIndex (%d)",
+				n.Title, n.EndIndex, n.StartIndex)
+		}
+	}
+}
+
+func TestSetEndIndicesFixesPresetInvalidEnd(t *testing.T) {
+	// A node with pre-set EndIndex < StartIndex should be corrected.
+	nodes := []*Node{
+		{Title: "Broken", StartIndex: 10, EndIndex: 3},
+		{Title: "Normal", StartIndex: 15, EndIndex: 20},
+	}
+
+	SetEndIndices(nodes, 25)
+
+	if nodes[0].EndIndex < nodes[0].StartIndex {
+		t.Errorf("Broken node still has EndIndex (%d) < StartIndex (%d)",
+			nodes[0].EndIndex, nodes[0].StartIndex)
+	}
+}
