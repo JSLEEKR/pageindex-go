@@ -59,6 +59,12 @@ func extractJSONString(raw string) string {
 		}
 	}
 
+	// Strip trailing text after the JSON by finding the matching closing bracket.
+	// LLMs often append explanatory text after the JSON output.
+	if len(s) > 0 {
+		s = trimTrailingNonJSON(s)
+	}
+
 	// Replace Python-style values
 	s = pythonNoneRE.ReplaceAllString(s, ": null")
 	s = pythonTrueRE.ReplaceAllString(s, ": true")
@@ -73,6 +79,64 @@ func extractJSONString(raw string) string {
 		s = singleQuoteRE.ReplaceAllString(s, `"$1"`)
 	}
 
+	return s
+}
+
+// trimTrailingNonJSON finds the last matching closing bracket/brace for the
+// opening character and strips everything after it. This handles the common
+// case where an LLM appends explanatory text after a JSON response.
+func trimTrailingNonJSON(s string) string {
+	if len(s) == 0 {
+		return s
+	}
+
+	var open, close byte
+	switch s[0] {
+	case '[':
+		open, close = '[', ']'
+	case '{':
+		open, close = '{', '}'
+	default:
+		return s
+	}
+
+	depth := 0
+	inString := false
+	escaped := false
+
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+
+		if escaped {
+			escaped = false
+			continue
+		}
+
+		if ch == '\\' && inString {
+			escaped = true
+			continue
+		}
+
+		if ch == '"' {
+			inString = !inString
+			continue
+		}
+
+		if inString {
+			continue
+		}
+
+		if ch == open {
+			depth++
+		} else if ch == close {
+			depth--
+			if depth == 0 {
+				return s[:i+1]
+			}
+		}
+	}
+
+	// No matching close found — return as-is and let json.Unmarshal report error
 	return s
 }
 
